@@ -4736,7 +4736,148 @@ Hub.CoinFarm.Worker = function()
 		break
 	end
 
-	Hub.CoinFarm.workerRunning = false
+	Hub.CoinFarm.FindLobbySpawn = function()
+	local lobbyNames = { "SummerLobby", "Lobby", "NormalLobby", "HalloweenLobby", "ChristmasLobby", "EasterLobby" }
+	for _, name in ipairs(lobbyNames) do
+		local lobby = workspace:FindFirstChild(name)
+		if lobby then
+			local spawns = lobby:FindFirstChild("Spawns")
+			if spawns then
+				local spawnLocation = spawns:FindFirstChildOfClass("SpawnLocation") or spawns:FindFirstChildWhichIsA("BasePart")
+				if spawnLocation then
+					return spawnLocation.CFrame + Vector3.new(0, 3.5, 0)
+				end
+			end
+			local nikilis = lobby:FindFirstChild("Lobby") and lobby.Lobby:FindFirstChild("Nikilis")
+			if nikilis then
+				local pivot = nikilis:IsA("Model") and nikilis:GetPivot() or nikilis.CFrame
+				return pivot + Vector3.new(0, 3.5, 0)
+			end
+			local innerLobby = lobby:FindFirstChild("Lobby") or lobby
+			local basePart = innerLobby:FindFirstChildWhichIsA("BasePart", true)
+			if basePart then
+				return basePart.CFrame + Vector3.new(0, 5, 0)
+			end
+		end
+	end
+	return nil
+end
+
+Hub.CoinFarm.ReturnToLobby = function()
+	local character_ = localPlayer.Character
+	local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
+	local humanoidRootPart = character_ and character_:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart or not humanoid or humanoid.Health <= 0 then
+		return false
+	end
+	local spawnCFrame = Hub.CoinFarm.FindLobbySpawn()
+	if not spawnCFrame then
+		return false
+	end
+	pcall(function()
+		humanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+		humanoidRootPart.AssemblyAngularVelocity = Vector3.zero
+		character_:PivotTo(spawnCFrame)
+		humanoidRootPart.CFrame = spawnCFrame
+	end)
+	return true
+end
+
+Hub.CoinFarm.LobbyWorker = function()
+	if Hub.CoinFarm.lobbyWorkerRunning then
+		return
+	end
+	Hub.CoinFarm.lobbyWorkerRunning = true
+	local gen = Hub.CoinFarm.generation
+
+	while foxnameMM2Runtime.alive and not isTerminated and Hub.CoinFarm.enabled and Hub.CoinFarm.lobbyFarmEnabled and Hub.CoinFarm.generation == gen do
+		if not Hub.RoundState.active then
+			Hub.CoinFarm.SetPhase("Waiting for round")
+			task.wait(0.3)
+			continue
+		end
+
+		if Hub.CoinFarm.sheriffFlingBlocking or Hub.FlingActive then
+			Hub.CoinFarm.SetPhase("Lobby farm paused")
+			task.wait(0.2)
+			continue
+		end
+
+		Hub.CoinFarm.CheckBagFullGui()
+		if Hub.CoinFarm.bagFull then
+			Hub.CoinFarm.SetPhase("Coin bag full")
+			if Hub.CoinFarm.endRoundEnabled then
+				Hub.CoinFarm.StartEndRoundAction()
+			else
+				Hub.CoinFarm.ResetAfterBagFull()
+			end
+			task.wait(0.5)
+			continue
+		end
+
+		local character_ = localPlayer.Character
+		local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
+		local humanoidRootPart = character_ and character_:FindFirstChild("HumanoidRootPart")
+		if not humanoid or humanoid.Health <= 0 or not humanoidRootPart then
+			Hub.CoinFarm.SetPhase("Waiting for respawn")
+			task.wait(0.3)
+			continue
+		end
+
+		if not Hub.CoinFarm.IndexMap() then
+			Hub.CoinFarm.SetPhase("Waiting for map")
+			task.wait(0.2)
+			continue
+		end
+
+		if not Hub.RoundState.coinsReady then
+			local hasCoin = false
+			for k in pairs(Hub.CoinFarm.coins) do
+				if Hub.CoinFarm.IsCoinAvailable(k) then
+					hasCoin = true
+					break
+				end
+			end
+			if not hasCoin then
+				Hub.CoinFarm.SetPhase("Waiting for coins")
+				task.wait(0.2)
+				continue
+			end
+			Hub.RoundState.coinsReady = true
+		end
+
+		local coin = Hub.CoinFarm.GetNearestCoin(humanoidRootPart)
+		if not coin then
+			Hub.CoinFarm.SetPhase("Waiting for coin")
+			task.wait(0.15)
+			continue
+		end
+
+		Hub.CoinFarm.SetPhase("Lobby farming")
+		local prevAttempts = Hub.CoinFarm.contactAttempts[coin] or 0
+		Hub.CoinFarm.contactAttempts[coin] = prevAttempts + 1
+
+		pcall(function()
+			humanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+			humanoidRootPart.AssemblyAngularVelocity = Vector3.zero
+			humanoidRootPart.CFrame = CFrame.new(coin.Position)
+		end)
+		task.wait(0.05)
+		Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, coin)
+		task.wait(0.1)
+		Hub.CoinFarm.ReturnToLobby()
+
+		if not Hub.CoinFarm.IsCoinAvailable(coin) then
+			Hub.CoinFarm.contactAttempts[coin] = nil
+		elseif (Hub.CoinFarm.contactAttempts[coin] or 0) >= 2 then
+			Hub.CoinFarm.retryUntil[coin] = os.clock() + 1.5
+			Hub.CoinFarm.contactAttempts[coin] = nil
+		end
+
+		task.wait(0.5)
+	end
+
+	Hub.CoinFarm.lobbyWorkerRunning = false
 end
 
 Hub.CoinFarm.FindOwnedCoinAmountLabels = function()
