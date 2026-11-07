@@ -3709,6 +3709,9 @@ Hub.CoinFarm.Worker = function()
 	local character_, humanoid, humanoidRootPart, currentCoin, flag7
 
 	while true do
+		if Hub.CoinFarm.lobbyFarmEnabled then
+			break
+		end
 		local alive = foxnameMM2Runtime.alive
 		local flag8 = alive and not isTerminated
 		local exitTo = nil
@@ -3718,6 +3721,10 @@ Hub.CoinFarm.Worker = function()
 			if not Hub.CoinFarm.enabled then
 				exitTo = 1
 				break
+			elseif Hub.CoinFarm.lobbyFarmEnabled then
+				exitTo = 1
+				break
+
 			elseif Hub.CoinFarm.sheriffFlingBlocking or Hub.FlingActive then
 				exitTo = 2
 				break
@@ -5651,6 +5658,8 @@ end
 
 Hub.CoinFarm.Destroy = function()
 	Hub.CoinFarm.enabled = false
+	Hub.CoinFarm.lobbyFarmEnabled = false
+	Hub.CoinFarm.lobbyWorkerRunning = false
 	Hub.CoinFarm.sessionStartedAt = 0
 	Hub.CoinFarm.serverHopTimerStartedAt = 0
 	Hub.CoinFarm.serverHopRunning = false
@@ -14870,6 +14879,31 @@ Hub.CoinFarm.modeControl = Tabs.Farm:Dropdown({
 
 		if mode ~= "Tween" and Hub.CoinFarm.position ~= "Under" then
 			Hub.CoinFarm.DisableUnder()
+		end
+	end,
+})
+
+Hub.CoinFarm.lobbyFarmControl = Tabs.Farm:Toggle({
+	Title = "Lobby Farm Mode",
+	Desc = "Teleport to the nearest coin, touch it, return to lobby, repeat every 0.5s. Requires Coin Farm enabled.",
+	Flag = "Farm_LobbyFarmMode",
+	Default = false,
+	Callback = function(arg)
+		local wasEnabled = Hub.CoinFarm.lobbyFarmEnabled
+		Hub.CoinFarm.lobbyFarmEnabled = arg and true or false
+		if wasEnabled == Hub.CoinFarm.lobbyFarmEnabled then
+			return
+		end
+		if not Hub.CoinFarm.enabled then
+			return
+		end
+		Hub.CoinFarm.generation = Hub.CoinFarm.generation + 1
+		Hub.CoinFarm.CancelTween()
+		Hub.CoinFarm.currentCoin = nil
+		if Hub.CoinFarm.lobbyFarmEnabled then
+			task.spawn(Hub.CoinFarm.LobbyWorker)
+		else
+			task.spawn(Hub.CoinFarm.Worker)
 		end
 	end,
 })
